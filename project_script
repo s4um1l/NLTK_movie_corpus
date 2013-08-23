@@ -1,0 +1,253 @@
+import urllib2,json
+import nltk
+import re
+from nltk.corpus import movie_reviews
+import svm
+from svmutil import *
+from sklearn import svm
+
+
+#initialize stopWords
+stopWords = []
+data=[]
+s_initial=0
+s_final=0
+all_words = nltk.FreqDist(w.lower() for w in movie_reviews.words())
+data = all_words.keys()[:2000] 
+
+
+
+def document_features(document): # [_document-classify-extractor]
+    document_words = set(document) # [_document-classify-set]
+    features = {}
+    for word in word_features:
+        features['contains(%s)' % word] = (word in document_words)
+    return features
+def replaceTwoOrMore(s):
+    #look for 2 or more repetitions of character and replace with the character itself
+    pattern = re.compile(r"(.)\1{1,}", re.DOTALL)
+   ## print "ReplaceTwoorMore words"+str(len (s))
+    return pattern.sub(r"\1\1", s)
+ 
+#start getStopWordList
+def getStopWordList(stopWordListFileName):
+    #read the stopwords file and build a list
+    stopWords = []
+    
+ 
+    fp = open(stopWordListFileName, 'r')
+    line = fp.readline()
+    while line:
+        word = line.strip()
+        stopWords.append(word)
+        line = fp.readline()
+    fp.close()
+    return stopWords
+#end
+def processData(s):
+    # process the data
+ 
+    #Convert to lower case
+    s = s.lower()
+    #Convert www.* or https?://* to URL
+    s = re.sub('((www\.[\s]+)|(https?://[^\s]+))','URL',s)
+    ##print "ReplaceURL"+str(len (s))
+
+    #Remove additional white spaces
+    s = re.sub('[\s]+', ' ', s)
+    #print "ReplaceWhiteSub words"+str(len (s))
+
+    #trim
+    s = s.strip('\'"')
+    #print "Stripping data of \""+str(len (s))
+
+    return s
+#start getfeatureVector
+
+def getFeatureVector(s,stopWords):
+    featureVector = []
+    words = s.split()
+   # s_initial=s_initial+len(words)
+    for w in words:
+        #replace two or more with two occurrences
+        w = replaceTwoOrMore(w)
+        #strip punctuation
+        w = w.strip('\'"?,.')
+        #check if the word stats with an alphabet
+        val = re.search(r"^[a-zA-Z][a-zA-Z0-9]*$", w)
+        #ignore if it is a stop word
+        if(w in stopWords or val is None):
+            continue
+        else:
+            featureVector.append(w.lower())
+    #    s_final=s_final+len(featureVector)
+    return featureVector
+#end
+
+
+def extract_features(s):
+    temp_data = set(s)
+    features = {}
+    #print data
+    for word in data:
+        features['contains(%s)' % word] = (word in temp_data)
+    return features
+fp=open("featureList.txt",'w')
+st = open('stopwords.txt', 'r')
+stopWords = getStopWordList('stopwords.txt')
+#print stopWords
+lis=["Social%20Network","Iron%20Man%203","Contraband", "Beauty%20and%20the%20Beast%203D", "Joyful%20Noise","Don't%20Go%20in%20the%20Woods", "Man%20on%20a%20Mission", "The%20Divide", "Albatross","Sing%20Your%20Song"]
+review=[]
+for p in lis:
+    stringq="http://api.rottentomatoes.com/api/public/v1.0/movies.json?apikey=vra4adxq94jek785zbkkubjm&q="+p
+    #print stringq
+    j = urllib2.urlopen(stringq)
+   # print j
+    k=json.load(j)
+    for j in range(5):
+        st=k['movies'][0]['links']['reviews']+"?apikey=vra4adxq94jek785zbkkubjm&q="+p+"&page_limit=50&page="+str(j+1)
+        l=urllib2.urlopen(st)
+        m=json.load(l)
+        for i in range(len(m['reviews'])):
+            temp_data=processData(m['reviews'][i]['quote'])
+            f=getFeatureVector(temp_data,stopWords)
+            for d in f:
+                data.append(d)
+           # X.append(f)
+           
+            label=( m['reviews'][i]['freshness'])
+           # Y.append(label)
+            #print label
+            review.append((f,label))
+print "Reduced"+str(s_initial) +"to"+str(s_final)
+#print review[0]
+#print X
+fp.close()
+print len(data)
+training_set = nltk.classify.util.apply_features(extract_features, review)
+#print training_set
+NBClassifier = nltk.NaiveBayesClassifier.train(training_set)
+
+###creating test sets
+lis1=["The%20Godfather","Disaster%20Movie","Pledge%20This!","Pulp%20Fiction","Inception","GoodFellas","Die%20Hard%20Dracula","Fat%20Slags"]
+review1=[]
+for p in lis1:
+    stringq="http://api.rottentomatoes.com/api/public/v1.0/movies.json?apikey=vra4adxq94jek785zbkkubjm&q="+p
+    #print stringq
+    j = urllib2.urlopen(stringq)
+   # print j
+    k=json.load(j)
+    for j in range(5):
+        st=k['movies'][0]['links']['reviews']+"?apikey=vra4adxq94jek785zbkkubjm&q="+p+"&page_limit=50&page="+str(j+1)
+        l=urllib2.urlopen(st)
+        m=json.load(l)
+        for i in range(len(m['reviews'])):
+            temp_data=processData(m['reviews'][i]['quote'])
+            f=getFeatureVector(temp_data,stopWords)
+           # X.append(f)
+           
+            label=( m['reviews'][i]['freshness'])
+           # Y.append(label)
+            #print label
+            review1.append((f,label))
+
+testing_set = nltk.classify.util.apply_features(extract_features, review1)
+
+print "Size" +str(len(testing_set))
+
+
+#clf = svm.SVC()
+#clf.fit(X, Y)
+ 
+# Test the classifier
+test = 'In the midst of various plot threads with varying degrees of contemporary relevance, Black pulls off a crazy plot twist a little more than halfway through the film thats truly inspired and solidifies it as a comedy.'
+#test="Not good"
+processedTest = processData(test)
+a=extract_features(getFeatureVector(processedTest,stopWords))
+#print a
+#clf.predict(extract_features(getFeatureVector(processedTest,stopWords)))
+print NBClassifier.classify(a)
+print NBClassifier.show_most_informative_features(10)
+MaxEntClassifier = nltk.classify.maxent.MaxentClassifier.train(training_set, 'GIS', trace=3, \
+                      encoding=None, labels=None, sparse=True, gaussian_prior_sigma=0, max_iter = 4)
+print MaxEntClassifier.classify(extract_features(getFeatureVector(processedTest,stopWords)))
+#SVMClassifier = nltk.classify.svm.SvmClassifier.train(training_set)
+#print SVMClassifier.classify(extract_features(getFeatureVector(processedTest,stopWords)))
+#classifier=nltk.DecisionTreeClassifier.train(training_set)
+print nltk.classify.accuracy(NBClassifier,testing_set)
+print nltk.classify.accuracy(MaxEntClassifier, testing_set)
+
+#classifier.classify(extract_features(getFeatureVector(processedTest,stopWords)))
+
+
+def getSandL(s,featureList):
+    sortedFeatures = sorted(featureList)
+    map = {}
+    feature_vector = []
+    labels = []
+    for t in s:
+        label = 0
+        map = {}
+        #Initialize empty map
+        for w in sortedFeatures:
+            map[w] = 0
+        
+        s_words = t[0]
+        s_opinion = t[1]
+        #Fill the map
+        for word in s_words:
+            #process the word (remove repetitions and punctuations)
+            word = replaceTwoOrMore(word) 
+            word = word.strip('\'"?,.')
+            #set map[word] to 1 if word exists
+            if word in map:
+                map[word] = 1
+        #end for loop
+        values = map.values()
+        feature_vector.append(values)
+        if(s_opinion == 'rotten'):
+            label = 0
+        elif(s_opinion == 'fresh'):
+            label = 1
+        labels.append(label)            
+    #return the list of feature_vector and labels
+    return {'feature_vector' : feature_vector, 'labels': labels}
+#end
+
+def getSVMFeatureVector(s,featureList):
+        sortedFeatures = sorted(featureList)
+        map = {}
+        feature_vector = []
+        for t in s:
+            label = 0
+            map = {}
+            #Initialize empty map
+            for w in sortedFeatures:
+                map[w] = 0
+            #Fill the map
+            for word in t:
+                if word in map:
+                    map[word] = 1
+            #end for loop
+            values = map.values()
+            feature_vector.append(values)                    
+        return feature_vector
+
+#####################Test SVM
+ 
+#Train the classifier
+#result = getSandL(review, data)
+#problem = svm_problem(result['labels'], result['feature_vector'])
+#'-q' option suppress console output
+#param = svm_parameter('-q')
+#param.kernel_type = LINEAR
+#classifier = svm_train(problem, param)
+#classifierDumpFile='a.svm'
+#svm_save_model(classifierDumpFile, classifier)
+ 
+#Test the classifier
+#test_feature_vector = getSVMFeatureVector(test, data)
+#p_labels contains the final labeling result
+#p_labels, p_accs, p_vals = svm_predict([0] * len(test_feature_vector),test_feature_vector, classifier)
+#print p_labels
+#print p_labels
